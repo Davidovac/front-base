@@ -1,0 +1,277 @@
+npx nano-react-app my-app
+
+cd my-app
+
+npm install
+
+npm install sass --save
+
+npm install react-hook-form
+
+npm install react-router-dom --save
+
+npm i --save react-select
+
+npm install axios
+
+import '../styles.scss';
+
+const [error, setError] = useState('');
+const [loading, setLoading] = useState(false);
+
+if (loading) return <div id="loadingSpinner" className="spinner"></div>;
+if (error) return <p style={{ color: 'red' }}>{error}</p>;
+
+****Hooks==
+const { register, handleSubmit, formState, reset } = useForm();
+-
+(postavljanje location.state-a == navigate(`/entity/${entity.id}`, { state: { transferVariable: otherEntity.id } })
+const location = useLocation();
+const transferVariable = location.state?.transferVariable;
+-
+location.pathname == / || /entities...
+-
+const { menuId } = useParams();
+
+
+===ELEMENTS===
+
+<input type="text" name="name" value={filters.name} onChange={handleFilterChange} />
+<select value={sort} onChange={e => setSort(e.target.value)} name="sortSelect">
+
+<input type="number" placeholder="Na primer: 20"
+{...register('discountAmount', {valueAsNumber: true, min: { value: 0, message: 'Popust mora biti 0 ili veći' }, 
+ max: { value: 100, message: 'Popust mora biti manji od 100%' } })}
+/>
+{errors.discountAmount && ( <p style={{ color: 'red', marginTop: '5px' }}>{errors.discountAmount.message}</p>)}
+
+<Controller name="animalSpeciesId" control={control} render={({ field }) => (
+  <Select {...field} options={species.map(s => ({value: s.id, label: s.name}))} value={entitiesY
+  .map(s => ({ value: s.id, label: s.name }))
+  .find(o => o.value === field.value)}
+  onChange={(option) => field.onChange(option?.value)}
+/>)}
+/>
+
+<label>Izaberi sliku: </label>
+<Controller name="file" control={control} render={({ field }) => (
+  <input type="file" onChange={(e) => field.onChange(e.target.files[0])}/>)}/>
+
+
+{showFoodTypeModal && <div className="over-layer-base">
+  <form className="food-type-creation-modal" onSubmit={handleSubmit(onCreateFoodType)}>
+    <h2>Create Food Type</h2>
+    <div>
+      <label>Name</label>
+      <input type="text" name="name" {...register("name")} />
+    </div>
+    <div>
+      <label>Unit of Measurement</label>
+      <input type="text" name="unitOfMeasure" {...register("unitOfMeasure")} />
+    </div>
+    <button type="submit">Confirm</button>
+    <button onClick={() => setShowFoodTypeModal(false)}>Cancel</button>
+  </form>
+</div>}
+
+
+<div className="filters-row">
+  <h3>Filters:</h3>
+  <div className="filter-item">
+    <label>Name:</label>
+    <input type="text" name="name" value={filters.name} onChange={handleFilterChange} />
+  </div>
+</div>
+<div>
+  <button onClick={() => fetch()}>Apply Filters</button>
+  <button onClick={() => resetFilters()}>Reset Filters</button>
+</div>
+
+
+===Useful FNs===
+
+const handleFilterChange = (e) => {
+  const { name, type, checked, value } = e.target;
+  setFilters((prev) => ({
+    ...prev,
+    [name]: type === 'checkbox' ? checked : value,
+  }));
+};
+
+function resetFilters() {
+  setFilters((prev => ({
+    ...prev, name: '', type: '', minPrice: '', allergicOnAlso: true
+  })));
+  setSort("NAME_ASC");
+}
+
+
+const manageFn = async () => {
+  try {
+    setLoading(true);
+    const response = await someCallerFn(payload);
+    setError('');
+    alert('Entitet je nadjen/napravljen/izmenjen/obrisan.');
+    navigate('/some-path');
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 400) {
+        setError('Niste uneli validne podatke.');
+      } else if (error.response.status === 404) {
+        setError('Pogresna ruta.');
+      } else if (error.response.status === 401) {
+        setError('Ova stranica je rezervisana samo za (<user_type>) .');
+      } else if (error.response.status === 500) {
+        setError('Greska na serveru. Pokusajte kasnije.');
+      } else {
+        setError(`Greska: ${error.response.status}`);
+      }
+    } else if (error.request) {
+      setError('Nema odgovora sa servera.');
+    } else {
+      setError('Doslo je do greske.');
+    }
+    console.error('Greska:', error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const formatDate = (inputString) => {
+  const date = new Date(inputString);
+  const pad = n => String(n).padStart(2, "0");
+
+  return(
+    date.getFullYear() + "-" +
+    pad(date.getMonth() + 1) + "-" +
+    pad(date.getDate()) + "T" +
+    pad(date.getHours()) + ":" +
+    pad(date.getMinutes())
+  );
+}
+
+
+****Service:
+
+*Api.jsx:
+import axios from 'axios';
+
+let api = axios.create({
+  baseURL: 'https://localhost:5231/api',
+});
+
+api.interceptors.request.use((config) => {
+
+  const token = sessionStorage.getItem("token");
+
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Logika za automatsku odjavu korisnika ili osveženje tokena
+      console.log('Niste autorizovani, molimo prijavite se ponovo.');
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+
+//Login
+export const login = async (loginData) => {
+
+  const response = await api.post("/auth/login", loginData);
+
+  if (response.data) {
+    sessionStorage.setItem("token", response.data);
+  }
+
+  return response.data;
+};
+
+//Normal service fn:
+import api from "./api";
+
+export const getOneEntity = async (entityId) => {
+  const response = await api.get(`/entities/${entityId}`);
+  return response.data;
+}
+
+
+---//STYLES
+
+html, body, #root {
+  height: 100%;
+  font-family:'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+  background-color: #fcf5e8;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family:Arial, Helvetica, sans-serif;
+}
+
+a, th {
+  font-family:'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+  font-weight: bolder;
+}
+
+//GLOBAL CLASSES
+
+.hidden {
+  display: none; 
+}
+
+.over-layer-base {
+  overflow-y: scroll;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.section-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.4rem 0;
+}
+
+//SPINNER
+.spinner-container {
+    @include container-column;
+    margin-top: 50px;
+  }
+  
+ .spinner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: 10px auto;
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  top: 40%;
+  left: 50%;
+  color: #155ce0;
+}
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }

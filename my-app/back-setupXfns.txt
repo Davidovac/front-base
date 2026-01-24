@@ -1,0 +1,363 @@
+------EFC------
+
+Microsoft.EntityFrameworkCore
+Microsoft.EntityFrameworkCore.Tools
+Npgsql.EntityFrameworkCore.PostgreSQL
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+"ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=cinemaDb;Username=postgres;Password=root"
+  }
+
+builder.Services.AddScoped<EntityService>();
+builder.Services.AddScoped<IEntityRepository, EntityRepository>();
+
+builder.Services.AddAutoMapper(typeof(MappingProfile));
+builder.Services.AddTransient<ExceptionHandlingMiddleware>();
+
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+
+_IDENTITY_
+
+Microsoft.AspNetCore.Identity.EntityFrameworkCore biblioteka
+
+public class ApplicationUser : IdentityUser
+
+public class AppDbContext : IdentityDbContext<ApplicationUser>
+
+// ...
+// Registracija Identity-a
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+  .AddEntityFrameworkStores<AppDbContext>()
+  .AddDefaultTokenProviders();
+
+// Definisanje uslova koje lozinka mora da ispuni
+builder.Services.Configure<IdentityOptions>(options =>
+{
+  options.Password.RequireDigit = true;          // Ima bar jednu cifru
+  options.Password.RequireLowercase = true;      // Ima bar jedno malo slovo
+  options.Password.RequireUppercase = true;      // Ima bar jedno veliko slovo
+  options.Password.RequireNonAlphanumeric = true;// Ima bar jedan specijalan karakter (!, @, #...)
+  options.Password.RequiredLength = 8;           // Ima bar 8 karaktera
+});
+
+// Dodavanje autentifikacije
+builder.Services.AddAuthentication();
+// ...
+var app = builder.Build();
+
+// Uključivanje autentifikacije
+app.UseAuthentication();
+
+
+_MIDDLEWARE_
+
+internal sealed class ExceptionHandlingMiddleware : IMiddleware
+{
+  public ExceptionHandlingMiddleware() {}
+
+  public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+  {
+    try
+    {
+      await next(context);
+    }
+    catch (Exception e)
+    {
+      await HandleExceptionAsync(context, e);
+    }
+  }
+
+  private async Task HandleExceptionAsync(HttpContext httpContext, Exception exception)
+  {
+    httpContext.Response.ContentType = "application/json";
+    httpContext.Response.StatusCode = exception switch
+    {
+      BadRequestException => StatusCodes.Status400BadRequest,
+      ForbiddenException => StatusCodes.Status403Forbidden,
+      NotFoundException => StatusCodes.Status404NotFound,
+      _ => StatusCodes.Status500InternalServerError
+    };
+    var response = new { error = exception.Message };
+    await httpContext.Response.WriteAsync(JsonSerializer.Serialize(response));
+  }
+}
+
+_JWT_
+
+Microsoft.AspNetCore.Authentication.JwtBearer
+
+"Jwt": {
+    "Key": "w31AjQ14HDyfea6R5W0hsZJ6B8bd/5st9J05M19Lcno=",
+    "Issuer": "http://localhost:5231",
+    "Audience": "http://localhost:5231"
+  }
+
+builder.Services.AddAuthentication();
+
+builder.Services.AddAuthentication(options =>
+{ // Naglašavamo da koristimo JWT
+  options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+  options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+  options.TokenValidationParameters = new TokenValidationParameters
+  {
+    ValidateLifetime = true, // Validacija da li je token istekao
+
+    ValidateIssuer = true,   // Validacija URL-a aplikacije koja izdaje token
+    ValidIssuer = builder.Configuration["Jwt:Issuer"], // URL aplikacije koja izdaje token (čita se iz appsettings.json)
+
+    ValidateAudience = true, // Validacija URL-a aplikacije koja koristi token
+    ValidAudience = builder.Configuration["Jwt:Audience"], // URL aplikacije koja koristi token (čita se iz appsettings.json)
+
+    ValidateIssuerSigningKey = true, // Validacija ključa za potpisivanje tokena (koji se koristi i pri proveri potpisa)
+    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])), //Ključ za proveru tokena (čita se iz appsettings.json)
+
+    RoleClaimType = ClaimTypes.Role // Potrebno za kontrolu pristupa, što ćemo videti kasnije
+  };
+});
+
+
+
+---Metode
+
+ public async Task<string> Login(LoginDto data)
+  {
+    var user = await _userManager.FindByNameAsync(data.Username);
+    if (user == null)
+    {
+      throw new BadRequestException("Invalid credentials.");
+    }
+
+    var passwordMatch = await _userManager.CheckPasswordAsync(user, data.Password);
+    if (!passwordMatch)
+    {
+      throw new BadRequestException("Invalid credentials.");
+    }
+    // Novina
+    var token = await GenerateJwt(user);
+    return token;
+  }
+
+  private async Task<string> GenerateJwt(ApplicationUser user)
+  {
+    var claims = new List<Claim>
+    {
+      new Claim(JwtRegisteredClaimNames.Sub, user.Id),  // 'sub' atribut
+      new Claim("username", user.UserName),  // 'username' atribut
+      new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())  // jedinstveni identifikator tokena
+    };
+
+    // Konfiguracija za generisanje tokena
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var token = new JwtSecurityToken(
+      issuer: _configuration["Jwt:Issuer"],
+      audience: _configuration["Jwt:Audience"],
+      claims: claims,
+      expires: DateTime.UtcNow.AddDays(1), // važi 1 dan ('exp' atribut), nakon čega mora nova prijava
+      signingCredentials: creds
+    );
+
+    // Generisanje tokena
+    return new JwtSecurityTokenHandler().WriteToken(token);
+  }
+}
+
+==CONTROLLER:
+
+[HttpGet("filtered")]
+public async Task<IActionResult> GetAnimalsFilteredAsync([FromQuery] AnimalFilters filters)
+{
+    var animals = await _animalsService.GetAllFilteredAsync(filters);
+    return Ok(animals);
+}
+
+[HttpGet("{id}")]
+public async Task<IActionResult> GetAnimalByIdAsync(int id)
+{
+    var animal = await _animalsService.GetByIdAsync(id);
+    return Ok(animal);
+}
+
+[HttpPost]
+public async Task<IActionResult> CreateAnimal([FromBody] AnimalCreateDto animal)
+{
+    var newAnimal = await _animalsService.CreateAsync(animal);
+    return Ok(animal);
+}
+
+[HttpPut("{id}")]
+public async Task<IActionResult> UpdateAnimal(int id, [FromBody] AnimalDto animal)
+{
+    await _animalsService.UpdateAsync(id, animal);
+    return Ok();
+}
+
+[HttpDelete("{id}")]
+public async Task<IActionResult> DeleteAnimal(int id)
+{
+    await _animalsService.DeleteAsync(id);
+    return NoContent();
+}
+
+==SERVICE:
+
+public async Task<IEnumerable<AnimalDto>> GetAllAsync()
+{
+    var animals = await _animalRepository.GetAllAsync();
+    return _mapper.Map<IEnumerable<AnimalDto>>(animals);
+}
+
+public async Task<IEnumerable<AnimalDto>> GetAllFilteredAsync(AnimalFilters filters)
+{
+    var animals = await _animalRepository.GetAllFilteredAsync(filters);
+    return _mapper.Map<IEnumerable<AnimalDto>>(animals);
+}
+
+public async Task<AnimalDto>? GetByIdAsync(int id)
+{
+    var animal = await _animalRepository.GetByIdAsync(id);
+    if (animal == null)
+    {
+        throw new NotFoundException(id);
+    }
+    return _mapper.Map<AnimalDto>(animal);
+}
+
+public async Task<AnimalDto> CreateAsync(AnimalCreateDto animalDto)
+{
+    var animal = _mapper.Map<Animal>(animalDto);
+    var createdAnimal = await _animalRepository.AddAsync(animal);
+    return _mapper.Map<AnimalDto>(createdAnimal);
+}
+
+public async Task UpdateAsync(int id, AnimalDto animalDto)
+{
+    var existingAnimal = await _animalRepository.GetByIdAsync(id);
+    if (existingAnimal == null)
+    {
+        throw new NotFoundException(id);
+    }
+    _mapper.Map(animalDto, existingAnimal);
+    _context.SaveChanges();
+}
+
+public async Task<bool> DeleteAsync(int id)
+{
+    return await _animalRepository.DeleteAsync(id);
+}
+
+
+==REPOSITORY:
+
+public async Task<IEnumerable<Animal>> GetAllAsync()
+{
+    return await _dbContext.Animals
+        .Include(a => a.AnimalSpecies)
+        .Include(a => a.Cage)
+        .ToListAsync();
+}
+
+public async Task<IEnumerable<Animal>> GetAllFilteredAsync(AnimalFilters filters)
+{
+    var query = _dbContext.Animals
+        .Include(a => a.AnimalSpecies)
+        .Include(a => a.Cage)
+        .AsQueryable();
+
+    return await ApplyFilters(query, filters).ToListAsync();
+}
+
+public async Task<Animal?> GetByIdAsync(int id)
+{
+    return await _dbContext.Animals
+        .Where(a => a.Id == id)
+        .Include(a => a.AnimalSpecies)
+        .Include(a => a.Cage)
+        .FirstOrDefaultAsync();
+}
+
+public async Task<Animal> AddAsync(Animal animal)
+{
+    _dbContext.Animals.Add(animal);
+    await _dbContext.SaveChangesAsync();
+    return animal;
+}
+
+public async Task<bool> DeleteAsync(int id)
+{
+    var animal = await _dbContext.Animals.FindAsync(id);
+    if (animal == null)
+    {
+        return false;
+    }
+    _dbContext.Animals.Remove(animal);
+    await _dbContext.SaveChangesAsync();
+    return true;
+}
+
+public IQueryable<Animal> ApplyFilters(IQueryable<Animal> query, AnimalFilters filters)
+{
+    if (!string.IsNullOrEmpty(filters.Species))
+    {
+        query = query.Where(a => a.AnimalSpecies.Name.Contains(filters.Species));
+    }
+
+    if (!string.IsNullOrEmpty(filters.CageCode))
+    {
+        query = query.Where(a => a.Cage != null && a.Cage.Code.Contains(filters.CageCode));
+    }
+
+    if (filters.CagelessOnly)
+    {
+        query = query.Where(a => a.Cage == null);
+    }
+
+    if (filters.ExpiresAt)
+    {
+        query = query.Where(a => a.ExpiresAt)
+    }
+
+    if (filterMix.MinPrice.HasValue && filterMix.MaxPrice.HasValue)
+    {
+        dishes = dishes.Where(r => r.Price >= filterMix.MinPrice.Value && r.Price <= filterMix.MaxPrice.Value);
+    }
+
+    return query;
+}
+
+
+private IQueryable<Dish> ApplySorting(IQueryable<Dish> query, string sort)
+{
+    if (!Enum.TryParse<DishSortTypes>(sort, true, out var sortType))
+        sortType = DishSortTypes.NAME_ASC;
+
+    return sortType switch
+    {
+        DishSortTypes.NAME_DESC => query.OrderByDescending(d => d.Name),
+        DishSortTypes.TYPE_ASC => query.OrderBy(d => d.Type),
+        DishSortTypes.TYPE_DESC => query.OrderByDescending(d => d.Type),
+        DishSortTypes.PRICE_ASC => query.OrderBy(d => d.Price),
+        DishSortTypes.PRICE_DESC => query.OrderByDescending(d => d.Price),
+        _ => query.OrderBy(d => d.Name)
+    };
+}
+
+// ------MAPPER------
+
+.ForMember(dest => dest.ExpirationDate, opt => opt.MapFrom(src => DateTime.SpecifyKind(src.ExpirationDate, DateTimeKind.Utc)));
+
+.ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => DateTime.UtcNow))
+
+.ForMember(dest => dest.OfferId, opt =>
+  {
+    opt.Condition(src => src.ItemType == "OFFER");
+    opt.MapFrom(src => src.Id);
+  });
