@@ -196,12 +196,54 @@ export const login = async (loginData) => {
   return response.data;
 };
 
-//Normal service fn:
-import api from "./api";
+//Service file:
 
-export const getOneEntity = async (entityId) => {
-  const response = await api.get(`/entities/${entityId}`);
-  return response.data;
+import api from '../axiosConfig';
+
+export const getFilteredXXs = async (sort, filters) => {
+    const params = new URLSearchParams();
+    filters.boolValue = filters.boolValue.toString()
+
+    if (filters.yyName) params.append("YYName", filters.yxName);
+    if (filters.zy) params.append("ZZ", filters.zy);
+    if (filters.xy) params.append("XX", filters.xy);
+    if (filters.valueFrom) params.append("ValueFrom", filters.valueFrom);
+    if (filters.valueTo) params.append("ValueTo", filters.valueTo);
+    params.append("sort", sort);
+
+    const response = await api.get(`/xy/?${params.toString()}`);
+
+    return response.data;
+}
+
+export const getAllXXs = async () => {
+    const response = await api.get("xy");
+
+    return response.data;
+}
+
+export const getOneXX = async (id) => {
+    const response = await api.get("xy/" + id);
+
+    return response.data;
+}
+
+export const deleteXX = async (id) => {
+    const response = await api.delete("xy/" + id);
+
+    return response.data;
+}
+
+export const updateXX = async (data) => {
+    const response = await api.put("xy/" + data);
+    
+    return response.data;
+}
+
+export const createXX = async (data) => {
+    const response = await api.post("xy", data);
+    
+    return response.data;
 }
 
 

@@ -1,3 +1,338 @@
+****UNIT OF WORK****
+
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+>INFRASTRUCTURE>:
+ -UnitOfWork:
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly AppDbContext _dbContext;
+    public IXXRepository XXs { get; private set; }
+
+    public UnitOfWork(AppDbContext dbContext)
+    {
+        _dbContext = dbContext;
+        XXs = new XXRepository(_dbContext);
+    }
+
+    public Task<int> CompleteAsync()
+    {
+        return _dbContext.SaveChangesAsync();
+    }
+
+    public void Dispose()
+    {
+        _dbContext.Dispose();
+    }
+}
+
+
+>DOMAIN>INTERFACES:
+ -IUnitOfWork:
+public interface IUnitOfWork : IDisposable
+{
+    IXXRepository XXs { get; }
+    Task<int> CompleteAsync();
+}
+
+
+>INFRASTRUCTURE>Repos:
+ -GenericRepository:
+public abstract class GenericRepository<T> : IGenericRepository<T> where T : class
+{
+    protected readonly AppDbContext _dbContext;
+    private bool _disposed = false;
+
+    protected GenericRepository(AppDbContext dbContext)
+    {
+        _dbContext = dbContext;
+    }
+
+    public async Task<List<T>> GetAllAsync()
+    {
+        return await _dbContext.Set<T>().ToListAsync();
+    }
+
+    public async Task<T?> GetOneAsync(int id)
+    {
+        return await _dbContext.Set<T>().FindAsync(id);
+    }
+
+    public async Task<T> AddAsync(T entity)
+    {
+        await _dbContext.Set<T>().AddAsync(entity);
+        return entity;
+    }
+    public void Update(T entity)
+    {
+        _dbContext.Set<T>().Update(entity);
+    }
+    public void Delete(T entity)
+    {
+        _dbContext.Set<T>().Remove(entity);
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                _dbContext.Dispose();
+            }
+
+            _disposed = true;
+        }
+    }
+}
+
+>DOMAIN>INTERFACES:
+ -IGenericRepository:
+public interface IGenericRepository<T> where T : class
+{
+    Task<List<T>> GetAllAsync();
+    Task<T?> GetOneAsync(int id);
+    Task<T> AddAsync(T entity);
+    void Update(T entity);
+    void Delete(T entity);
+    void Dispose();
+}
+
+                    ______Metode_______
+
+==CONTROLLER:
+
+private readonly IXXService _xyService;
+
+public XXController(IXXService xyService)
+{
+    _xyService = xyService;
+}
+
+[HttpGet("filtered")]
+public async Task<IActionResult> GetXXsFilteredAsync([FromQuery] XXFilterMix filters)
+{
+    var xys = await _xysService.GetAllFilteredAsync(filters);
+    return Ok(xys);
+}
+
+[HttpGet]
+public async Task<IActionResult> GetAllXXsAsync()
+{
+    var xys = await _xysService.GetAllAsync();
+    return Ok(xys);
+}
+
+[HttpGet("{id}")]
+public async Task<IActionResult> GetXXByIdAsync(int id)
+{
+    var xy = await _xysService.GetByIdAsync(id);
+    return Ok(xy);
+}
+
+[HttpPost]
+public async Task<IActionResult> CreateXX([FromBody] XXDto xy)
+{
+    var newXX = await _xysService.CreateAsync(xy);
+    return Ok(xy);
+}
+
+[HttpPut]
+public async Task<IActionResult> UpdateXX([FromBody] XXDto xy)
+{
+    await _xysService.UpdateAsync(id, xy);
+    return Ok();
+}
+
+[HttpDelete("{id}")]
+public async Task<IActionResult> DeleteXX(int id)
+{
+    await _xysService.DeleteAsync(id);
+    return NoContent();
+}
+
+==SERVICE:
+
+private readonly IUnitOfWork _unitOfWork;
+private readonly IMapper _mapper;
+
+public XXService(IUnitOfWork unitOfWork, IMapper mapper)
+{
+    _unitOfWork = unitOfWork;
+    _mapper = mapper;
+}
+
+public async Task<List<XXDto>> GetAllFilteredAsync(int sort, XXFilterMix filters)
+{
+    return _mapper.Map<List<XXDto>>(await _unitOfWork.XXs.GetAllFilteredAsync(filters));
+}
+
+public async Task<List<XXDto>> GetAllAsync()
+{
+    return _mapper.Map<List<XXDto>>(await _unitOfWork.XXs.GetAllAsync(filters));
+}
+
+public async Task<XXDto?> GetOneAsync(int id)
+{
+    var xy = await _unitOfWork.XXs.GetOneAsync(id);
+    if (xy == null)
+    {
+        throw new NotFoundException(id);
+    }
+    return _mapper.Map<XXDto>(xy);
+}
+
+public async Task CreateAsync(XXDto xyDto)
+{
+    var xy = _mapper.Map<XX>(xyDto);
+    await _unitOfWork.XXs.AddAsync(xy);
+    await _unitOfWork.CompleteAsync();
+}
+
+public async Task UpdateAsync(XXDto xyDto)
+{
+    var xy = await _unitOfWork.XXs.GetOneAsync(xyDto.Id);
+    if (xy == null)
+    {
+        throw new NotFoundException(xyDto.Id);
+    }
+    _mapper.Map(xyDto, xy);
+    _unitOfWork.XXs.Update(xy);
+    await _unitOfWork.CompleteAsync();
+}
+
+public async Task DeleteAsync(int id)
+{
+    var xy = await _unitOfWork.XXs.GetOneAsync(id);
+    if (xy == null)
+    {
+        throw new NotFoundException(id);
+    }
+    _unitOfWork.XXs.Delete(xy);
+    await _unitOfWork.CompleteAsync();
+}
+
+-Service Interface:
+  Task<List<XXDto>> GetAllFilteredAsync(int sort, XXFilterMix filters);
+  Task<List<XXDto>> GetAllAsync();
+  Task<XXDto?> GetOneAsync(int id);
+  Task CreateAsync(XXDto xyDto);
+  Task UpdateAsync(XXDto xyDto);
+  Task DeleteAsync(int id);
+
+==REPOSITORY:
+-Interface looks: public interface IXXRepository : IGenericRepository<XX>
+
+
+public class XXRepository : GenericRepository<XX>, IXXRepository
+{
+    public RestaurantRepository(AppDbContext _dbContext) : base(_dbContext)
+    {
+    }
+}
+
+public new async Task<List<XX>> GetAllAsync()
+{
+    return await _dbContext.XXs
+        .Include(a => a.YY)
+        .Include(a => a.ZZ)
+        .ToListAsync();
+}
+
+public async Task<List<XX>> GetAllFilteredAsync(XXFilterMix filters, int sort)
+{
+    var query = _dbContext.XXs
+        .Include(a => a.YY)
+        .Include(a => a.ZZ)
+        .AsQueryable();
+
+    query = ApplyFilters(query, filters);
+    query = ApplySorting(query, sort);
+
+    return await query.ToListAsync();
+}
+
+public new async Task<XX?> GetOneAsync(int id)
+{
+    return await _dbContext.XXs
+        .Include(a => a.ZZ)
+        .Include(a => a.YY)
+        .FirstOrDefaultAsync(o => o.Id == id);
+}
+
+public IQueryable<Animal> ApplyFilters(IQueryable<XX> query, XXFilters filters)
+{
+    if (!string.IsNullOrEmpty(filters.Species))
+    {
+        query = query.Where(a => a.YY.Name.Contains(filters.YYName));
+    }
+
+    if (filters.CagelessOnly)
+    {
+        query = query.Where(a => a.Cage == null);
+    }
+
+    if (filters.ExpiresAt)
+    {
+        query = query.Where(a => a.ExpiresAt)
+    }
+
+    if (filterMix.MinPrice.HasValue && filterMix.MaxPrice.HasValue)
+    {
+        dishes = dishes.Where(r => r.Price >= filterMix.MinPrice.Value && r.Price <= filterMix.MaxPrice.Value);
+    }
+
+    return query;
+}
+
+
+private IQueryable<XX> ApplySorting(IQueryable<XX> query, string sort)
+{
+    if (!Enum.TryParse<XXSortTypes>(sort, true, out var sortType))
+        sortType = XXSortTypes.NAME_ASC;
+
+    return sortType switch
+    {
+        XXSortTypes.NAME_DESC => query.OrderByDescending(d => d.Name),
+        XXSortTypes.TYPE_ASC => query.OrderBy(d => d.Type),
+        XXSortTypes.TYPE_DESC => query.OrderByDescending(d => d.Type),
+        XXSortTypes.PRICE_ASC => query.OrderBy(d => d.Price),
+        XXSortTypes.PRICE_DESC => query.OrderByDescending(d => d.Price),
+        _ => query.OrderBy(d => d.Name)
+    };
+}
+
+// ------MAPPER------
+
+.ForMember(dest => dest.ExpirationDate, opt => opt.MapFrom(src => DateTime.SpecifyKind(src.ExpirationDate, DateTimeKind.Utc)));
+
+.ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => DateTime.UtcNow))
+
+.ForMember(dest => dest.OfferId, opt =>
+  {
+    opt.Condition(src => src.ItemType == "OFFER");
+    opt.MapFrom(src => src.Id);
+  });
+
+
+
+
+
+
+
+
+
+
+___________________________________________
+-=*-=*-=*-=*-=FROM 0 SETUP=-*=-*=-*=-*=-
+___________________________________________
+
 ------EFC------
 
 Microsoft.EntityFrameworkCore
@@ -122,242 +457,3 @@ builder.Services.AddAuthentication(options =>
     RoleClaimType = ClaimTypes.Role // Potrebno za kontrolu pristupa, što ćemo videti kasnije
   };
 });
-
-
-
----Metode
-
- public async Task<string> Login(LoginDto data)
-  {
-    var user = await _userManager.FindByNameAsync(data.Username);
-    if (user == null)
-    {
-      throw new BadRequestException("Invalid credentials.");
-    }
-
-    var passwordMatch = await _userManager.CheckPasswordAsync(user, data.Password);
-    if (!passwordMatch)
-    {
-      throw new BadRequestException("Invalid credentials.");
-    }
-    // Novina
-    var token = await GenerateJwt(user);
-    return token;
-  }
-
-  private async Task<string> GenerateJwt(ApplicationUser user)
-  {
-    var claims = new List<Claim>
-    {
-      new Claim(JwtRegisteredClaimNames.Sub, user.Id),  // 'sub' atribut
-      new Claim("username", user.UserName),  // 'username' atribut
-      new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())  // jedinstveni identifikator tokena
-    };
-
-    // Konfiguracija za generisanje tokena
-    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-    var token = new JwtSecurityToken(
-      issuer: _configuration["Jwt:Issuer"],
-      audience: _configuration["Jwt:Audience"],
-      claims: claims,
-      expires: DateTime.UtcNow.AddDays(1), // važi 1 dan ('exp' atribut), nakon čega mora nova prijava
-      signingCredentials: creds
-    );
-
-    // Generisanje tokena
-    return new JwtSecurityTokenHandler().WriteToken(token);
-  }
-}
-
-==CONTROLLER:
-
-[HttpGet("filtered")]
-public async Task<IActionResult> GetAnimalsFilteredAsync([FromQuery] AnimalFilters filters)
-{
-    var animals = await _animalsService.GetAllFilteredAsync(filters);
-    return Ok(animals);
-}
-
-[HttpGet("{id}")]
-public async Task<IActionResult> GetAnimalByIdAsync(int id)
-{
-    var animal = await _animalsService.GetByIdAsync(id);
-    return Ok(animal);
-}
-
-[HttpPost]
-public async Task<IActionResult> CreateAnimal([FromBody] AnimalCreateDto animal)
-{
-    var newAnimal = await _animalsService.CreateAsync(animal);
-    return Ok(animal);
-}
-
-[HttpPut("{id}")]
-public async Task<IActionResult> UpdateAnimal(int id, [FromBody] AnimalDto animal)
-{
-    await _animalsService.UpdateAsync(id, animal);
-    return Ok();
-}
-
-[HttpDelete("{id}")]
-public async Task<IActionResult> DeleteAnimal(int id)
-{
-    await _animalsService.DeleteAsync(id);
-    return NoContent();
-}
-
-==SERVICE:
-
-public async Task<IEnumerable<AnimalDto>> GetAllAsync()
-{
-    var animals = await _animalRepository.GetAllAsync();
-    return _mapper.Map<IEnumerable<AnimalDto>>(animals);
-}
-
-public async Task<IEnumerable<AnimalDto>> GetAllFilteredAsync(AnimalFilters filters)
-{
-    var animals = await _animalRepository.GetAllFilteredAsync(filters);
-    return _mapper.Map<IEnumerable<AnimalDto>>(animals);
-}
-
-public async Task<AnimalDto>? GetByIdAsync(int id)
-{
-    var animal = await _animalRepository.GetByIdAsync(id);
-    if (animal == null)
-    {
-        throw new NotFoundException(id);
-    }
-    return _mapper.Map<AnimalDto>(animal);
-}
-
-public async Task<AnimalDto> CreateAsync(AnimalCreateDto animalDto)
-{
-    var animal = _mapper.Map<Animal>(animalDto);
-    var createdAnimal = await _animalRepository.AddAsync(animal);
-    return _mapper.Map<AnimalDto>(createdAnimal);
-}
-
-public async Task UpdateAsync(int id, AnimalDto animalDto)
-{
-    var existingAnimal = await _animalRepository.GetByIdAsync(id);
-    if (existingAnimal == null)
-    {
-        throw new NotFoundException(id);
-    }
-    _mapper.Map(animalDto, existingAnimal);
-    _context.SaveChanges();
-}
-
-public async Task<bool> DeleteAsync(int id)
-{
-    return await _animalRepository.DeleteAsync(id);
-}
-
-
-==REPOSITORY:
-
-public async Task<IEnumerable<Animal>> GetAllAsync()
-{
-    return await _dbContext.Animals
-        .Include(a => a.AnimalSpecies)
-        .Include(a => a.Cage)
-        .ToListAsync();
-}
-
-public async Task<IEnumerable<Animal>> GetAllFilteredAsync(AnimalFilters filters)
-{
-    var query = _dbContext.Animals
-        .Include(a => a.AnimalSpecies)
-        .Include(a => a.Cage)
-        .AsQueryable();
-
-    return await ApplyFilters(query, filters).ToListAsync();
-}
-
-public async Task<Animal?> GetByIdAsync(int id)
-{
-    return await _dbContext.Animals
-        .Where(a => a.Id == id)
-        .Include(a => a.AnimalSpecies)
-        .Include(a => a.Cage)
-        .FirstOrDefaultAsync();
-}
-
-public async Task<Animal> AddAsync(Animal animal)
-{
-    _dbContext.Animals.Add(animal);
-    await _dbContext.SaveChangesAsync();
-    return animal;
-}
-
-public async Task<bool> DeleteAsync(int id)
-{
-    var animal = await _dbContext.Animals.FindAsync(id);
-    if (animal == null)
-    {
-        return false;
-    }
-    _dbContext.Animals.Remove(animal);
-    await _dbContext.SaveChangesAsync();
-    return true;
-}
-
-public IQueryable<Animal> ApplyFilters(IQueryable<Animal> query, AnimalFilters filters)
-{
-    if (!string.IsNullOrEmpty(filters.Species))
-    {
-        query = query.Where(a => a.AnimalSpecies.Name.Contains(filters.Species));
-    }
-
-    if (!string.IsNullOrEmpty(filters.CageCode))
-    {
-        query = query.Where(a => a.Cage != null && a.Cage.Code.Contains(filters.CageCode));
-    }
-
-    if (filters.CagelessOnly)
-    {
-        query = query.Where(a => a.Cage == null);
-    }
-
-    if (filters.ExpiresAt)
-    {
-        query = query.Where(a => a.ExpiresAt)
-    }
-
-    if (filterMix.MinPrice.HasValue && filterMix.MaxPrice.HasValue)
-    {
-        dishes = dishes.Where(r => r.Price >= filterMix.MinPrice.Value && r.Price <= filterMix.MaxPrice.Value);
-    }
-
-    return query;
-}
-
-
-private IQueryable<Dish> ApplySorting(IQueryable<Dish> query, string sort)
-{
-    if (!Enum.TryParse<DishSortTypes>(sort, true, out var sortType))
-        sortType = DishSortTypes.NAME_ASC;
-
-    return sortType switch
-    {
-        DishSortTypes.NAME_DESC => query.OrderByDescending(d => d.Name),
-        DishSortTypes.TYPE_ASC => query.OrderBy(d => d.Type),
-        DishSortTypes.TYPE_DESC => query.OrderByDescending(d => d.Type),
-        DishSortTypes.PRICE_ASC => query.OrderBy(d => d.Price),
-        DishSortTypes.PRICE_DESC => query.OrderByDescending(d => d.Price),
-        _ => query.OrderBy(d => d.Name)
-    };
-}
-
-// ------MAPPER------
-
-.ForMember(dest => dest.ExpirationDate, opt => opt.MapFrom(src => DateTime.SpecifyKind(src.ExpirationDate, DateTimeKind.Utc)));
-
-.ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => DateTime.UtcNow))
-
-.ForMember(dest => dest.OfferId, opt =>
-  {
-    opt.Condition(src => src.ItemType == "OFFER");
-    opt.MapFrom(src => src.Id);
-  });
