@@ -104,7 +104,6 @@ public interface IGenericRepository<T> where T : class
     void Dispose();
 }
 
-                    ______Metode_______
 
 ==CONTROLLER:
 
@@ -118,42 +117,42 @@ public XXController(IXXService xyService)
 [HttpGet("filtered")]
 public async Task<IActionResult> GetXXsFilteredAsync([FromQuery] XXFilterMix filters)
 {
-    var xys = await _xysService.GetAllFilteredAsync(filters);
+    var xys = await _xyService.GetAllFilteredAsync(filters);
     return Ok(xys);
 }
 
 [HttpGet]
 public async Task<IActionResult> GetAllXXsAsync()
 {
-    var xys = await _xysService.GetAllAsync();
+    var xys = await _xyService.GetAllAsync();
     return Ok(xys);
 }
 
 [HttpGet("{id}")]
 public async Task<IActionResult> GetXXByIdAsync(int id)
 {
-    var xy = await _xysService.GetByIdAsync(id);
+    var xy = await _xyService.GetOneAsync(id);
     return Ok(xy);
 }
 
 [HttpPost]
 public async Task<IActionResult> CreateXX([FromBody] XXDto xy)
 {
-    var newXX = await _xysService.CreateAsync(xy);
+    await _xyService.CreateAsync(xy);
     return Ok(xy);
 }
 
 [HttpPut]
 public async Task<IActionResult> UpdateXX([FromBody] XXDto xy)
 {
-    await _xysService.UpdateAsync(id, xy);
+    await _xyService.UpdateAsync(xy);
     return Ok();
 }
 
 [HttpDelete("{id}")]
 public async Task<IActionResult> DeleteXX(int id)
 {
-    await _xysService.DeleteAsync(id);
+    await _xyService.DeleteAsync(id);
     return NoContent();
 }
 
@@ -175,7 +174,7 @@ public async Task<List<XXDto>> GetAllFilteredAsync(int sort, XXFilterMix filters
 
 public async Task<List<XXDto>> GetAllAsync()
 {
-    return _mapper.Map<List<XXDto>>(await _unitOfWork.XXs.GetAllAsync(filters));
+    return _mapper.Map<List<XXDto>>(await _unitOfWork.XXs.GetAllAsync());
 }
 
 public async Task<XXDto?> GetOneAsync(int id)
@@ -232,7 +231,7 @@ public async Task DeleteAsync(int id)
 
 public class XXRepository : GenericRepository<XX>, IXXRepository
 {
-    public RestaurantRepository(AppDbContext _dbContext) : base(_dbContext)
+    public XXRepository(AppDbContext _dbContext) : base(_dbContext)
     {
     }
 }
@@ -266,7 +265,7 @@ public new async Task<XX?> GetOneAsync(int id)
         .FirstOrDefaultAsync(o => o.Id == id);
 }
 
-public IQueryable<Animal> ApplyFilters(IQueryable<XX> query, XXFilters filters)
+public IQueryable<XX> ApplyFilters(IQueryable<XX> query, XXFilterMix filters)
 {
     if (!string.IsNullOrEmpty(filters.Species))
     {
@@ -283,9 +282,14 @@ public IQueryable<Animal> ApplyFilters(IQueryable<XX> query, XXFilters filters)
         query = query.Where(a => a.ExpiresAt)
     }
 
-    if (filterMix.MinPrice.HasValue && filterMix.MaxPrice.HasValue)
+    if (filters.MinPrice.HasValue && filters.MaxPrice.HasValue)
     {
-        dishes = dishes.Where(r => r.Price >= filterMix.MinPrice.Value && r.Price <= filterMix.MaxPrice.Value);
+        query = query.Where(a => a.Price >= filters.MinPrice.Value && a.Price <= filters.MaxPrice.Value);
+    }
+
+    if (filters.AgeFrom.HasValue && filters.AgeTo.HasValue)
+    {
+        query = query.Where(a => a.Birthday.AddYears(filters.AgeFrom.Value) <= DateTime.UtcNow && a.Birthday.AddYears(filters.AgeTo.Value) >= DateTime.UtcNow);
     }
 
     return query;
@@ -320,7 +324,9 @@ private IQueryable<XX> ApplySorting(IQueryable<XX> query, string sort)
     opt.MapFrom(src => src.Id);
   });
 
-
+CreateMap<XX, XXDto>()
+    .ReverseMap()
+    .ForMember(dest => dest.Id, opt => opt.Ignore());
 
 
 
