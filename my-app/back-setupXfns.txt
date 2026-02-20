@@ -1,3 +1,21 @@
+=SEED:
+var context = serviceProvider.GetRequiredService<AppDbContext>();
+
+var existingXX1 = await context.XXs
+.FirstOrDefaultAsync(p => p.UserId == xy1.Id);
+
+if (existingXX1 == null)
+{
+    var obj = new obj
+    {
+        UserId = xy1.Id
+    };
+
+    context.XXs.Add(obj);
+    await context.SaveChangesAsync();
+}
+
+
 ****UNIT OF WORK****
 
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
